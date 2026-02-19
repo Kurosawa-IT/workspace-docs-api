@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: workspace_docs_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workspace_docs}
+      POSTGRES_USER: ${POSTGRES_USER:-workspace_docs_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workspace_docs_pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-workspace_docs_user} -d ${POSTGRES_DB:-workspace_docs}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: workspace_docs_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:
+  redis_data:
