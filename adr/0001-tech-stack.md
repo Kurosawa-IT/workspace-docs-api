@@ -37,4 +37,3 @@ Date: 2026-02-20
 - API: Django（管理画面が強いが、今回の目的はAPI設計/運用/非同期を明示的に学ぶこと）
 - ORM: SQLModel（簡便だが、SQLAlchemy 2の理解を優先）
 - 非同期: RQ（簡単だが、実務遭遇率と拡張性でCeleryを優先）
-  EOF
