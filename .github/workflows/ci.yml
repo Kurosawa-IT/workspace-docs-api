@@ -8,6 +8,29 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: workspace_docs
+          POSTGRES_USER: workspace_docs_user
+          POSTGRES_PASSWORD: workspace_docs_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workspace_docs_user -d workspace_docs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: workspace_docs
+      POSTGRES_USER: workspace_docs_user
+      POSTGRES_PASSWORD: workspace_docs_pass
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +45,7 @@ jobs:
           pip install fastapi "uvicorn[standard]" pydantic-settings
           pip install sqlalchemy alembic "psycopg[binary]"
           pip install pytest httpx
+          pip install argon2-cffi
 
       - name: Lint
         run: |
