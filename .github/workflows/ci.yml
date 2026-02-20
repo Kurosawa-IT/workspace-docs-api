@@ -30,6 +30,7 @@ jobs:
       POSTGRES_DB: workspace_docs
       POSTGRES_USER: workspace_docs_user
       POSTGRES_PASSWORD: workspace_docs_pass
+      JWT_SECRET_KEY: dev-secret-change-me-32bytes-minimum!!
 
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,7 @@ jobs:
           pip install sqlalchemy alembic "psycopg[binary]"
           pip install pytest httpx
           pip install argon2-cffi
+          pip install PyJWT
 
       - name: Lint
         run: |
