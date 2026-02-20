@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "workspace_docs_user"
     POSTGRES_PASSWORD: str = "workspace_docs_pass"
 
+    JWT_SECRET_KEY: str = "dev-secret-change-me-32bytes-minimum!!"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
