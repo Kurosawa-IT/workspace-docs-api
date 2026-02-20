@@ -14,7 +14,7 @@ pre-commit install
 
 ## コマンド
 
-### 
+### Lint・Format
 
 ```bash
 ruff check .
