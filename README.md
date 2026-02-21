@@ -11,10 +11,12 @@ RBAC（権限管理）、監査ログ、検索、非同期エクスポート、�
 ## 主要機能
 
 実装済み（現状）
+
 - Alembic（migration）導入と upgrade/downgrade 動作確認
+- 認証：JWT（Bearer）
 
 実装予定（ロードマップ）
-- 認証：JWT（Bearer）
+
 - ワークスペース：作成・所属一覧
 - RBAC：owner/admin/member/viewer
 - ドキュメント：CRUD、検索、ページング、状態（draft/published/archived）
@@ -37,6 +39,7 @@ RBAC（権限管理）、監査ログ、検索、非同期エクスポート、�
 ## セットアップ
 
 ### 1) 依存関係
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -45,11 +48,13 @@ pip install -r requirements.txt
 ```
 
 ### 2) インフラ
+
 ```bash
 docker compose up -d
 ```
 
 ### 3) 環境変数
+
 ```bash
 APP_ENV=local
 DATABASE_URL=postgresql+psycopg://etl_user:etl_password@127.0.0.1:5432/etl_db
@@ -59,10 +64,10 @@ JWT_EXPIRES_MINUTES=60
 ```
 
 ### 4) マイグレーション
+
 ```bash
 alembic current
 alembic upgrade head
 alembic downgrade -1
 alembic upgrade head
 ```
-
