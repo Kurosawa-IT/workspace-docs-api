@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.security import hash_password, verify_password
 from app.core.tokens import create_access_token
 from app.db.session import get_db
@@ -48,3 +49,8 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> TokenOut:  # noqa:
 
     token = create_access_token(subject=str(user.id))
     return TokenOut(access_token=token)
+
+
+@router.get("/me", response_model=UserOut)
+def me(user: User = Depends(get_current_user)) -> UserOut:  # noqa: B008
+    return user
