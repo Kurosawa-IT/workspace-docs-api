@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -69,3 +71,25 @@ def list_members(
     )
     rows = db.execute(stmt).all()
     return [MemberOut(user_id=r[0], email=r[1], role=r[2]) for r in rows]
+
+
+@router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_member(
+    user_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_REMOVE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> Response:
+    if user_id == ctx.user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove self")
+
+    stmt = select(Membership).where(
+        Membership.workspace_id == ctx.workspace.id,
+        Membership.user_id == user_id,
+    )
+    ms = db.execute(stmt).scalar_one_or_none()
+    if ms is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    db.delete(ms)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
