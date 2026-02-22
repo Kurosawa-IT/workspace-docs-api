@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_current_workspace
+from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
+from app.core import rbac
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
+from app.schemas.membership import MemberOut
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -52,3 +54,18 @@ def list_workspaces(
 @router.get("/{workspace_id}", response_model=WorkspaceOut)
 def get_workspace(ws: Workspace = Depends(get_current_workspace)) -> WorkspaceOut:  # noqa: B008
     return ws
+
+
+@router.get("/{workspace_id}/members", response_model=list[MemberOut])
+def list_members(
+    ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_LIST)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> list[MemberOut]:
+    stmt = (
+        select(Membership.user_id, User.email, Membership.role)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.workspace_id == ctx.workspace.id)
+        .order_by(Membership.created_at.asc())
+    )
+    rows = db.execute(stmt).all()
+    return [MemberOut(user_id=r[0], email=r[1], role=r[2]) for r in rows]
