@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MemberOut(BaseModel):
@@ -9,3 +9,7 @@ class MemberOut(BaseModel):
     user_id: UUID
     email: str
     role: str
+
+
+class MemberRoleUpdateIn(BaseModel):
+    role: str = Field(pattern="^(owner|admin|member|viewer)$")
