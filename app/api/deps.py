@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Path, status
@@ -5,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import rbac
 from app.core.tokens import decode_access_token
 from app.db.session import get_db
 from app.models.membership import Membership
@@ -65,3 +67,40 @@ def get_current_workspace(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     return ws
+
+
+@dataclass(frozen=True)
+class WorkspaceContext:
+    user: User
+    workspace: Workspace
+    membership: Membership
+
+
+def get_workspace_context(
+    workspace_id: UUID = Path(...),  # noqa: B008
+    user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> WorkspaceContext:
+    ws = db.execute(select(Workspace).where(Workspace.id == workspace_id)).scalar_one_or_none()
+    if ws is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    ms = db.execute(
+        select(Membership).where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if ms is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    return WorkspaceContext(user=user, workspace=ws, membership=ms)
+
+
+def require(action: str):
+    def _dep(ctx: WorkspaceContext = Depends(get_workspace_context)) -> WorkspaceContext:  # noqa: B008
+        if not rbac.can(ctx.membership.role, action):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        return ctx
+
+    return _dep
