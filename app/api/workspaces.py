@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_workspace
 from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.user import User
@@ -47,3 +47,8 @@ def list_workspaces(
     )
     items = db.execute(stmt).scalars().all()
     return list(items)
+
+
+@router.get("/{workspace_id}", response_model=WorkspaceOut)
+def get_workspace(ws: Workspace = Depends(get_current_workspace)) -> WorkspaceOut:  # noqa: B008
+    return ws
