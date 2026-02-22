@@ -1,13 +1,15 @@
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Path, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.tokens import decode_access_token
 from app.db.session import get_db
+from app.models.membership import Membership
 from app.models.user import User
+from app.models.workspace import Workspace
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -42,3 +44,24 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_workspace(
+    workspace_id: UUID = Path(...),  # noqa: B008
+    user: User = Depends(get_current_user),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> Workspace:
+    ws = db.execute(select(Workspace).where(Workspace.id == workspace_id)).scalar_one_or_none()
+    if ws is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    membership = db.execute(
+        select(Membership).where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    return ws
