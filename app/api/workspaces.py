@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.schemas.membership import MemberOut
+from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -93,3 +93,26 @@ def remove_member(
     db.delete(ms)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{workspace_id}/members/{user_id}", response_model=MemberOut)
+def change_member_role(
+    user_id: UUID,  # noqa: B008
+    payload: MemberRoleUpdateIn,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_CHANGE_ROLE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> MemberOut:
+    ms = db.execute(
+        select(Membership).where(
+            Membership.workspace_id == ctx.workspace.id,
+            Membership.user_id == user_id,
+        )
+    ).scalar_one_or_none()
+    if ms is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    ms.role = payload.role
+    db.commit()
+
+    email = db.execute(select(User.email).where(User.id == user_id)).scalar_one()
+    return MemberOut(user_id=user_id, email=email, role=ms.role)
