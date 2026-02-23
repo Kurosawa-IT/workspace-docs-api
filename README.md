@@ -71,3 +71,9 @@ alembic upgrade head
 alembic downgrade -1
 alembic upgrade head
 ```
+
+## 監査ログ（audit_logs）運用方針
+
+- 監査ログは追記のみ（UPDATE禁止 / DELETE禁止）を前提とする。
+- before/after には個人情報・秘匿情報（password等）を入れない。
+- request_id を必ず保存し、APIログと突合できるようにする。
