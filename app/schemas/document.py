@@ -23,6 +23,8 @@ class DocumentOut(BaseModel):
     updated_by: UUID
     created_at: datetime
     updated_at: datetime
+    published_at: datetime | None
+    archived_at: datetime | None
 
 
 class DocumentUpdateIn(BaseModel):
