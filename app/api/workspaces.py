@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import and_
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
 from app.core import rbac
@@ -226,21 +227,29 @@ def delete_document(
 
 @router.get("/{workspace_id}/docs", response_model=DocumentListOut)
 def list_documents(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    sort: str = Query("updated_at_desc", pattern="^updated_at_desc$"),
+    page: int = Query(1, ge=1),  # noqa: B008
+    page_size: int = Query(20, ge=1, le=100),  # noqa: B008
+    sort: str = Query("updated_at_desc", pattern="^updated_at_desc$"),  # noqa: B008
+    status: str | None = Query(None, pattern="^(draft|published|archived)$"),  # noqa: B008
+    tag: str | None = Query(None, min_length=1, max_length=50),  # noqa: B008
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_READ)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentListOut:
+    filters = [Document.workspace_id == ctx.workspace.id]
+    if status is not None:
+        filters.append(Document.status == status)
+    if tag is not None:
+        filters.append(Document.tags.any(tag))
+
     total = db.execute(
-        select(func.count()).select_from(Document).where(Document.workspace_id == ctx.workspace.id)
+        select(func.count()).select_from(Document).where(and_(*filters))
     ).scalar_one()
 
-    order_by = (Document.updated_at.desc(), Document.id.desc())  # tie-breakで順序を安定化
+    order_by = (Document.updated_at.desc(), Document.id.desc())
 
     stmt = (
         select(Document)
-        .where(Document.workspace_id == ctx.workspace.id)
+        .where(and_(*filters))
         .order_by(*order_by)
         .offset((page - 1) * page_size)
         .limit(page_size)
