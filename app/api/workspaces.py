@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -11,7 +12,7 @@ from app.models.document import Document
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.schemas.document import DocumentCreateIn, DocumentOut
+from app.schemas.document import DocumentCreateIn, DocumentOut, DocumentUpdateIn
 from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 
@@ -157,4 +158,42 @@ def get_document(
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
+    return doc
+
+
+@router.patch("/{workspace_id}/docs/{doc_id}", response_model=DocumentOut)
+def update_document(
+    doc_id: UUID,  # noqa: B008
+    payload: DocumentUpdateIn,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_UPDATE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentOut:
+    doc = db.execute(
+        select(Document).where(
+            Document.id == doc_id,
+            Document.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    changed = False
+    if payload.title is not None:
+        doc.title = payload.title
+        changed = True
+    if payload.body is not None:
+        doc.body = payload.body
+        changed = True
+    if payload.tags is not None:
+        doc.tags = payload.tags
+        changed = True
+
+    if not changed:
+        return doc
+
+    doc.updated_by = ctx.user.id
+    doc.updated_at = datetime.now(UTC)
+
+    db.commit()
+    db.refresh(doc)
     return doc
