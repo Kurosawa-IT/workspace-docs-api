@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
 from app.core import rbac
 from app.db.session import get_db
+from app.models.document import Document
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
+from app.schemas.document import DocumentCreateIn, DocumentOut
 from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 
@@ -116,3 +118,26 @@ def change_member_role(
 
     email = db.execute(select(User.email).where(User.id == user_id)).scalar_one()
     return MemberOut(user_id=user_id, email=email, role=ms.role)
+
+
+@router.post(
+    "/{workspace_id}/docs", response_model=DocumentOut, status_code=status.HTTP_201_CREATED
+)
+def create_document(
+    payload: DocumentCreateIn,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_CREATE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentOut:
+    doc = Document(
+        workspace_id=ctx.workspace.id,
+        title=payload.title,
+        body=payload.body,
+        status="draft",
+        tags=payload.tags,
+        created_by=ctx.user.id,
+        updated_by=ctx.user.id,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
