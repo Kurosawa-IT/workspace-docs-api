@@ -234,12 +234,15 @@ def list_documents(
     tag: str | None = Query(None, min_length=1, max_length=50),  # noqa: B008
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_READ)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
+    query: str | None = Query(None, min_length=1, max_length=200),  # noqa: B008
 ) -> DocumentListOut:
     filters = [Document.workspace_id == ctx.workspace.id]
     if status is not None:
         filters.append(Document.status == status)
     if tag is not None:
         filters.append(Document.tags.any(tag))
+    if query is not None:
+        filters.append(Document.title.ilike(f"%{query}%"))
 
     total = db.execute(
         select(func.count()).select_from(Document).where(and_(*filters))
