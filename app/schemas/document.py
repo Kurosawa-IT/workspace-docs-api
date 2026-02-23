@@ -23,3 +23,9 @@ class DocumentOut(BaseModel):
     updated_by: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    body: str | None = Field(default=None, min_length=1)
+    tags: list[str] | None = Field(default=None, max_length=10)
