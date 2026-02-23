@@ -141,3 +141,20 @@ def create_document(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+@router.get("/{workspace_id}/docs/{doc_id}", response_model=DocumentOut)
+def get_document(
+    doc_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_READ)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentOut:
+    stmt = select(Document).where(
+        Document.id == doc_id,
+        Document.workspace_id == ctx.workspace.id,
+    )
+    doc = db.execute(stmt).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    return doc
