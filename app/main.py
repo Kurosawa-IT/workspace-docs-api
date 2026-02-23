@@ -6,10 +6,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.auth import router as auth_router
 from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
+from app.core.errors import install_exception_handlers
 from app.core.logging import configure_logging
 from app.core.request_id import request_id_var
 
 app = FastAPI(title=settings.app_name)
+
+install_exception_handlers(app)
 
 configure_logging()
 
