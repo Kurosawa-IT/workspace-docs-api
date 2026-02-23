@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
@@ -197,3 +197,28 @@ def update_document(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+@router.delete("/{workspace_id}/docs/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    doc_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_DELETE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> None:
+    doc = db.execute(
+        select(Document.id).where(
+            Document.id == doc_id,
+            Document.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    db.execute(
+        delete(Document).where(
+            Document.id == doc_id,
+            Document.workspace_id == ctx.workspace.id,
+        )
+    )
+    db.commit()
+    return None
