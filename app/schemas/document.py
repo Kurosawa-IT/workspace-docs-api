@@ -29,3 +29,10 @@ class DocumentUpdateIn(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1)
     tags: list[str] | None = Field(default=None, max_length=10)
+
+
+class DocumentListOut(BaseModel):
+    items: list[DocumentOut]
+    total: int
+    page: int
+    page_size: int

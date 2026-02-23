@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
@@ -12,7 +12,7 @@ from app.models.document import Document
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.schemas.document import DocumentCreateIn, DocumentOut, DocumentUpdateIn
+from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
 from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 
@@ -222,3 +222,34 @@ def delete_document(
     )
     db.commit()
     return None
+
+
+@router.get("/{workspace_id}/docs", response_model=DocumentListOut)
+def list_documents(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    sort: str = Query("updated_at_desc", pattern="^updated_at_desc$"),
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_READ)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentListOut:
+    total = db.execute(
+        select(func.count()).select_from(Document).where(Document.workspace_id == ctx.workspace.id)
+    ).scalar_one()
+
+    order_by = (Document.updated_at.desc(), Document.id.desc())  # tie-breakで順序を安定化
+
+    stmt = (
+        select(Document)
+        .where(Document.workspace_id == ctx.workspace.id)
+        .order_by(*order_by)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = db.execute(stmt).scalars().all()
+
+    return DocumentListOut(
+        items=[DocumentOut.model_validate(d) for d in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
