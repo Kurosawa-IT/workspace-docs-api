@@ -265,3 +265,62 @@ def list_documents(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post("/{workspace_id}/docs/{doc_id}/publish", response_model=DocumentOut)
+def publish_document(
+    doc_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_PUBLISH)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentOut:
+    doc = db.execute(
+        select(Document).where(
+            Document.id == doc_id,
+            Document.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if doc.status != "draft":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid transition")
+
+    now = datetime.now(UTC)
+    doc.status = "published"
+    doc.published_at = now
+    doc.archived_at = None
+    doc.updated_by = ctx.user.id
+    doc.updated_at = now
+
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.post("/{workspace_id}/docs/{doc_id}/archive", response_model=DocumentOut)
+def archive_document(
+    doc_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_DOC_ARCHIVE)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DocumentOut:
+    doc = db.execute(
+        select(Document).where(
+            Document.id == doc_id,
+            Document.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if doc.status != "published":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid transition")
+
+    now = datetime.now(UTC)
+    doc.status = "archived"
+    doc.archived_at = now
+    doc.updated_by = ctx.user.id
+    doc.updated_at = now
+
+    db.commit()
+    db.refresh(doc)
+    return doc
