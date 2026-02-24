@@ -25,6 +25,7 @@ def decode_access_token(token: str) -> dict:
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             options={"require": ["exp", "sub"]},
+            leeway=5,
         )
     except InvalidTokenError as err:
         raise ValueError("invalid token") from err

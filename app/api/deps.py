@@ -27,7 +27,15 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = decode_access_token(cred.credentials)
+    try:
+        payload = decode_access_token(cred.credentials)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from err
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(

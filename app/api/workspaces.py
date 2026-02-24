@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import and_
 
@@ -16,6 +16,9 @@ from app.models.workspace import Workspace
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
 from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
+from app.services.documents import create_document as svc_create_document
+from app.services.documents import delete_document as svc_delete_document
+from app.services.documents import update_document as svc_update_document
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -130,18 +133,14 @@ def create_document(
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_CREATE)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentOut:
-    doc = Document(
+    doc = svc_create_document(
+        db,
         workspace_id=ctx.workspace.id,
+        actor_user_id=ctx.user.id,
         title=payload.title,
         body=payload.body,
-        status="draft",
         tags=payload.tags,
-        created_by=ctx.user.id,
-        updated_by=ctx.user.id,
     )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
     return doc
 
 
@@ -169,34 +168,18 @@ def update_document(
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_UPDATE)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentOut:
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == ctx.workspace.id,
+    try:
+        doc = svc_update_document(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            doc_id=doc_id,
+            title=payload.title,
+            body=payload.body,
+            tags=payload.tags,
         )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    changed = False
-    if payload.title is not None:
-        doc.title = payload.title
-        changed = True
-    if payload.body is not None:
-        doc.body = payload.body
-        changed = True
-    if payload.tags is not None:
-        doc.tags = payload.tags
-        changed = True
-
-    if not changed:
-        return doc
-
-    doc.updated_by = ctx.user.id
-    doc.updated_at = datetime.now(UTC)
-
-    db.commit()
-    db.refresh(doc)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Document not found") from err
     return doc
 
 
@@ -206,22 +189,15 @@ def delete_document(
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_DELETE)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> None:
-    doc = db.execute(
-        select(Document.id).where(
-            Document.id == doc_id,
-            Document.workspace_id == ctx.workspace.id,
+    try:
+        svc_delete_document(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            doc_id=doc_id,
         )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    db.execute(
-        delete(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == ctx.workspace.id,
-        )
-    )
-    db.commit()
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Document not found") from err
     return None
 
 
