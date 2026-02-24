@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -16,8 +15,10 @@ from app.models.workspace import Workspace
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
 from app.schemas.membership import MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
+from app.services.documents import archive_document as svc_archive_document
 from app.services.documents import create_document as svc_create_document
 from app.services.documents import delete_document as svc_delete_document
+from app.services.documents import publish_document as svc_publish_document
 from app.services.documents import update_document as svc_update_document
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -249,27 +250,17 @@ def publish_document(
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_PUBLISH)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentOut:
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == ctx.workspace.id,
+    try:
+        doc = svc_publish_document(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            doc_id=doc_id,
         )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    if doc.status != "draft":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid transition")
-
-    now = datetime.now(UTC)
-    doc.status = "published"
-    doc.published_at = now
-    doc.archived_at = None
-    doc.updated_by = ctx.user.id
-    doc.updated_at = now
-
-    db.commit()
-    db.refresh(doc)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Document not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail="Invalid transition") from err
     return doc
 
 
@@ -279,24 +270,15 @@ def archive_document(
     ctx: WorkspaceContext = Depends(require(rbac.A_DOC_ARCHIVE)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> DocumentOut:
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == ctx.workspace.id,
+    try:
+        doc = svc_archive_document(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            doc_id=doc_id,
         )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    if doc.status != "published":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid transition")
-
-    now = datetime.now(UTC)
-    doc.status = "archived"
-    doc.archived_at = now
-    doc.updated_by = ctx.user.id
-    doc.updated_at = now
-
-    db.commit()
-    db.refresh(doc)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Document not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail="Invalid transition") from err
     return doc

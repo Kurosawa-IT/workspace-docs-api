@@ -132,3 +132,84 @@ def delete_document(
 
     db.commit()
     return None
+
+
+def publish_document(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    actor_user_id: UUID,
+    doc_id: UUID,
+) -> Document:
+    doc = db.execute(
+        select(Document).where(Document.id == doc_id, Document.workspace_id == workspace_id)
+    ).scalar_one_or_none()
+    if doc is None:
+        raise KeyError("document not found")
+
+    if doc.status != "draft":
+        raise ValueError("invalid transition")
+
+    before = _snapshot(doc)
+
+    now = datetime.now(UTC)
+    doc.status = "published"
+    doc.published_at = now
+    doc.archived_at = None
+    doc.updated_by = actor_user_id
+    doc.updated_at = now
+
+    write_audit_log(
+        db,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        action="doc.publish",
+        target_type="document",
+        target_id=doc.id,
+        before=before,
+        after=_snapshot(doc),
+    )
+
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+def archive_document(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    actor_user_id: UUID,
+    doc_id: UUID,
+) -> Document:
+    doc = db.execute(
+        select(Document).where(Document.id == doc_id, Document.workspace_id == workspace_id)
+    ).scalar_one_or_none()
+    if doc is None:
+        raise KeyError("document not found")
+
+    if doc.status != "published":
+        raise ValueError("invalid transition")
+
+    before = _snapshot(doc)
+
+    now = datetime.now(UTC)
+    doc.status = "archived"
+    doc.archived_at = now
+    doc.updated_by = actor_user_id
+    doc.updated_at = now
+
+    write_audit_log(
+        db,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        action="doc.archive",
+        target_type="document",
+        target_id=doc.id,
+        before=before,
+        after=_snapshot(doc),
+    )
+
+    db.commit()
+    db.refresh(doc)
+    return doc
