@@ -1,17 +1,19 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import and_
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
 from app.core import rbac
 from app.db.session import get_db
+from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
+from app.schemas.audit import AuditLogListOut, AuditLogOut
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
 from app.schemas.membership import MemberAddIn, MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
@@ -288,7 +290,7 @@ def archive_document(
 
 @router.post("/{workspace_id}/members", response_model=MemberOut, status_code=201)
 def add_member(
-    payload: MemberAddIn,
+    payload: MemberAddIn,  # noqa: B008
     ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_ADD)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> MemberOut:
@@ -305,3 +307,46 @@ def add_member(
 
     email = db.execute(select(User.email).where(User.id == payload.user_id)).scalar_one()
     return MemberOut(user_id=payload.user_id, email=email, role=ms.role)
+
+
+@router.get("/{workspace_id}/audit", response_model=AuditLogListOut)
+def search_audit_logs(
+    page: int = Query(1, ge=1),  # noqa: B008
+    page_size: int = Query(20, ge=1, le=100),  # noqa: B008
+    action: str | None = Query(None, max_length=100),  # noqa: B008
+    actor: UUID | None = Query(None),  # noqa: B008
+    from_: datetime | None = Query(None, alias="from"),  # noqa: B008
+    to: datetime | None = Query(None),  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_AUDIT_READ)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> AuditLogListOut:
+    filters = [AuditLog.workspace_id == ctx.workspace.id]
+
+    if action is not None:
+        filters.append(AuditLog.action == action)
+    if actor is not None:
+        filters.append(AuditLog.actor_user_id == actor)
+    if from_ is not None:
+        filters.append(AuditLog.created_at >= from_)
+    if to is not None:
+        filters.append(AuditLog.created_at <= to)
+
+    where_clause = and_(*filters)
+
+    total = db.execute(select(func.count()).select_from(AuditLog).where(where_clause)).scalar_one()
+
+    stmt = (
+        select(AuditLog)
+        .where(where_clause)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = db.execute(stmt).scalars().all()
+
+    return AuditLogListOut(
+        items=[AuditLogOut.model_validate(x) for x in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
