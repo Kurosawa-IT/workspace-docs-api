@@ -13,13 +13,16 @@ from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
-from app.schemas.membership import MemberOut, MemberRoleUpdateIn
+from app.schemas.membership import MemberAddIn, MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 from app.services.documents import archive_document as svc_archive_document
 from app.services.documents import create_document as svc_create_document
 from app.services.documents import delete_document as svc_delete_document
 from app.services.documents import publish_document as svc_publish_document
 from app.services.documents import update_document as svc_update_document
+from app.services.memberships import add_member as svc_add_member
+from app.services.memberships import change_role as svc_change_role
+from app.services.memberships import remove_member as svc_remove_member
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -88,19 +91,19 @@ def remove_member(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> Response:
     if user_id == ctx.user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove self")
+        raise HTTPException(status_code=400, detail="Cannot remove yourself")
 
-    stmt = select(Membership).where(
-        Membership.workspace_id == ctx.workspace.id,
-        Membership.user_id == user_id,
-    )
-    ms = db.execute(stmt).scalar_one_or_none()
-    if ms is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    try:
+        svc_remove_member(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            user_id=user_id,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Member not found") from err
 
-    db.delete(ms)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return None
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberOut)
@@ -110,17 +113,16 @@ def change_member_role(
     ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_CHANGE_ROLE)),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> MemberOut:
-    ms = db.execute(
-        select(Membership).where(
-            Membership.workspace_id == ctx.workspace.id,
-            Membership.user_id == user_id,
+    try:
+        ms = svc_change_role(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            user_id=user_id,
+            role=payload.role,
         )
-    ).scalar_one_or_none()
-    if ms is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-
-    ms.role = payload.role
-    db.commit()
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Member not found") from err
 
     email = db.execute(select(User.email).where(User.id == user_id)).scalar_one()
     return MemberOut(user_id=user_id, email=email, role=ms.role)
@@ -282,3 +284,24 @@ def archive_document(
     except ValueError as err:
         raise HTTPException(status_code=409, detail="Invalid transition") from err
     return doc
+
+
+@router.post("/{workspace_id}/members", response_model=MemberOut, status_code=201)
+def add_member(
+    payload: MemberAddIn,
+    ctx: WorkspaceContext = Depends(require(rbac.A_MEMBER_ADD)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> MemberOut:
+    try:
+        ms = svc_add_member(
+            db,
+            workspace_id=ctx.workspace.id,
+            actor_user_id=ctx.user.id,
+            user_id=payload.user_id,
+            role=payload.role,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail="Already a member") from err
+
+    email = db.execute(select(User.email).where(User.id == payload.user_id)).scalar_one()
+    return MemberOut(user_id=payload.user_id, email=email, role=ms.role)

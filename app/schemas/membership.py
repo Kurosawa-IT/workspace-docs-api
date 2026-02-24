@@ -13,3 +13,8 @@ class MemberOut(BaseModel):
 
 class MemberRoleUpdateIn(BaseModel):
     role: str = Field(pattern="^(owner|admin|member|viewer)$")
+
+
+class MemberAddIn(BaseModel):
+    user_id: UUID
+    role: str = Field(pattern="^(owner|admin|member|viewer)$")
