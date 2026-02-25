@@ -11,12 +11,13 @@ from app.core import rbac
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.document import Document
+from app.models.job import Job
 from app.models.membership import Membership
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.audit import AuditLogListOut, AuditLogOut
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
-from app.schemas.job import JobOut
+from app.schemas.job import JobDetailOut, JobOut
 from app.schemas.membership import MemberAddIn, MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 from app.services.documents import archive_document as svc_archive_document
@@ -375,3 +376,22 @@ def start_export(
         status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         content=JobOut.model_validate(job).model_dump(mode="json"),
     )
+
+
+@router.get("/{workspace_id}/jobs/{job_id}", response_model=JobDetailOut)
+def get_job(
+    job_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_JOB_READ)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> JobDetailOut:
+    job = db.execute(
+        select(Job).where(
+            Job.id == job_id,
+            Job.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    return job
