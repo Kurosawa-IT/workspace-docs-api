@@ -1,1 +1,1 @@
-from app.tasks import dummy  # noqa: F401
+from app.tasks import dummy, export  # noqa: F401

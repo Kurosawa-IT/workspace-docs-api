@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
+from starlette.responses import JSONResponse
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
 from app.core import rbac
@@ -15,6 +16,7 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.audit import AuditLogListOut, AuditLogOut
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
+from app.schemas.job import JobOut
 from app.schemas.membership import MemberAddIn, MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
 from app.services.documents import archive_document as svc_archive_document
@@ -22,9 +24,11 @@ from app.services.documents import create_document as svc_create_document
 from app.services.documents import delete_document as svc_delete_document
 from app.services.documents import publish_document as svc_publish_document
 from app.services.documents import update_document as svc_update_document
+from app.services.jobs import create_export_job
 from app.services.memberships import add_member as svc_add_member
 from app.services.memberships import change_role as svc_change_role
 from app.services.memberships import remove_member as svc_remove_member
+from app.tasks.export import run_export
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -349,4 +353,25 @@ def search_audit_logs(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.post("/{workspace_id}/exports", response_model=JobOut)
+def start_export(
+    ctx: WorkspaceContext = Depends(require(rbac.A_EXPORT_CREATE)),  # noqa: B008
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    job, created = create_export_job(
+        db,
+        workspace_id=ctx.workspace.id,
+        idempotency_key=idempotency_key,
+        payload=None,
+    )
+    if created:
+        run_export.delay(str(job.id))
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        content=JobOut.model_validate(job).model_dump(mode="json"),
     )
