@@ -77,3 +77,17 @@ alembic upgrade head
 - 監査ログは追記のみ（UPDATE禁止 / DELETE禁止）を前提とする。
 - before/after には個人情報・秘匿情報（password等）を入れない。
 - request_id を必ず保存し、APIログと突合できるようにする。
+
+## Celery（非同期タスク）
+
+Redis起動:
+
+- docker compose up -d redis
+
+worker起動:
+
+- celery -A app.celery_app.celery_app worker -l info
+
+疎通（例）:
+
+- python で `app.tasks.dummy.add.delay(2,3)` などを実行して結果を取得する
