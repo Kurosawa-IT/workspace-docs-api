@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "workspace_docs_user"
     POSTGRES_PASSWORD: str = "workspace_docs_pass"
 
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     JWT_SECRET_KEY: str = "dev-secret-change-me-32bytes-minimum!!"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
