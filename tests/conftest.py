@@ -1,9 +1,13 @@
+import os
+
 import pytest
 from sqlalchemy.orm import Session
 
 from alembic import command
 from alembic.config import Config
 from app.db.session import engine
+
+os.environ.setdefault("APP_ENV", "test")
 
 
 @pytest.fixture(scope="session", autouse=True)

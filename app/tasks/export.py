@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,8 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document
 from app.models.job import Job
+
+logger = logging.getLogger(__name__)
 
 
 def _to_json_doc(d: Document) -> dict:
@@ -60,8 +63,10 @@ def run_export(job_id: str) -> dict:
             return {"status": "missing"}
 
         fmt = "json"
+        force_fail = False
         if isinstance(job.payload, dict):
             fmt = job.payload.get("format", "json")
+            force_fail = bool(job.payload.get("force_fail"))
         if fmt not in {"json", "csv"}:
             fmt = "json"
 
@@ -71,6 +76,9 @@ def run_export(job_id: str) -> dict:
         db.commit()
 
         try:
+            if force_fail:
+                raise RuntimeError("forced failure for test")
+
             docs = (
                 db.execute(
                     select(Document)
@@ -109,6 +117,11 @@ def run_export(job_id: str) -> dict:
             return job.result
 
         except Exception as e:
+            logger.exception(
+                "export failed job_id=%s workspace_id=%s",
+                str(job.id),
+                str(job.workspace_id),
+            )
             job.status = "failed"
             job.error = str(e)
             job.updated_at = datetime.now(UTC)
