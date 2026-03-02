@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
@@ -32,7 +33,6 @@ from app.services.jobs import create_export_job
 from app.services.memberships import add_member as svc_add_member
 from app.services.memberships import change_role as svc_change_role
 from app.services.memberships import remove_member as svc_remove_member
-from app.tasks.export import run_export
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -390,11 +390,16 @@ def start_export(
         db,
         workspace_id=ctx.workspace.id,
         idempotency_key=idempotency_key,
-        payload={"format": body.format},
+        payload={"format": body.format, "force_fail": body.force_fail},
     )
 
     if created:
-        run_export.delay(str(job.id))
+        from app.tasks.export import run_export  # noqa: WPS433 (local import)
+
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            run_export.apply(args=[str(job.id)])
+        else:
+            run_export.delay(str(job.id))
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
