@@ -389,6 +389,7 @@ def start_export(
     job, created = create_export_job(
         db,
         workspace_id=ctx.workspace.id,
+        actor_user_id=ctx.user.id,
         idempotency_key=idempotency_key,
         payload={"format": body.format, "force_fail": body.force_fail},
     )
