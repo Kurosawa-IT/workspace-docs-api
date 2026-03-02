@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.job import Job
+from app.services.audit import write_audit_log
 
 
 def create_export_job(
@@ -15,6 +16,7 @@ def create_export_job(
     *,
     workspace_id: UUID,
     idempotency_key: str,
+    actor_user_id: UUID,
     payload: dict | None = None,
 ) -> tuple[Job, bool]:
     existing = db.execute(
@@ -51,4 +53,20 @@ def create_export_job(
         return existing2, False
 
     db.refresh(job)
+
+    write_audit_log(
+        db,
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        action="export.create",
+        target_type="job",
+        target_id=job.id,
+        before=None,
+        after={
+            "type": job.type,
+            "idempotency_key": job.idempotency_key,
+            "format": (payload or {}).get("format"),
+        },
+    )
+    db.commit()
     return job, True
