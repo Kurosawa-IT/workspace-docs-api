@@ -1,13 +1,15 @@
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 
 from app.api.deps import WorkspaceContext, get_current_user, get_current_workspace, require
 from app.core import rbac
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.document import Document
@@ -397,4 +399,55 @@ def start_export(
     return JSONResponse(
         status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         content=JobOut.model_validate(job).model_dump(mode="json"),
+    )
+
+
+@router.get("/{workspace_id}/jobs/{job_id}/download")
+def download_job_result(
+    job_id: UUID,  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_EXPORT_DOWNLOAD)),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    job = db.execute(
+        select(Job).where(
+            Job.id == job_id,
+            Job.workspace_id == ctx.workspace.id,
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.status != "succeeded":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job not completed")
+
+    if not isinstance(job.result, dict) or "path" not in job.result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Missing job result path"
+        )
+
+    export_dir = Path(settings.EXPORT_DIR).resolve()
+    file_path = Path(str(job.result["path"])).resolve()
+
+    if file_path != export_dir and export_dir not in file_path.parents:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid result path"
+        )
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Result file missing"
+        )
+
+    ext = file_path.suffix.lower()
+    media_type = "application/octet-stream"
+    if ext == ".json":
+        media_type = "application/json"
+    elif ext == ".csv":
+        media_type = "text/csv"
+
+    filename = f"export-{job.id}{ext if ext else ''}"
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=filename,
     )
