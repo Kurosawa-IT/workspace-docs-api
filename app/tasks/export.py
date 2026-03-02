@@ -9,7 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from celery.exceptions import MaxRetriesExceededError
+from psycopg import OperationalError as PsycopgOperationalError
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from app.celery_app import celery_app
 from app.core.config import settings
@@ -49,8 +52,15 @@ def _to_csv(docs: list[Document]) -> str:
     return buf.getvalue()
 
 
-@celery_app.task(name="export.run")
-def run_export(job_id: str) -> dict:
+@celery_app.task(
+    name="export.run",
+    bind=True,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
+)
+def run_export(self, job_id: str) -> dict:
     job_uuid = UUID(job_id)
     now = datetime.now(UTC)
 
@@ -115,6 +125,25 @@ def run_export(job_id: str) -> dict:
             job.updated_at = datetime.now(UTC)
             db.commit()
             return job.result
+
+        except (SAOperationalError, PsycopgOperationalError, TimeoutError) as e:
+            logger.exception(
+                "export transient failure; will retry job_id=%s workspace_id=%s",
+                str(job.id),
+                str(job.workspace_id),
+            )
+            job.error = f"transient: {e}"
+            job.updated_at = datetime.now(UTC)
+            db.commit()
+
+            try:
+                raise self.retry(exc=e)
+            except MaxRetriesExceededError:
+                job.status = "failed"
+                job.error = f"retries_exceeded: {e}"
+                job.updated_at = datetime.now(UTC)
+                db.commit()
+                return {"error": str(e)}
 
         except Exception as e:
             logger.exception(

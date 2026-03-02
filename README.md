@@ -91,3 +91,11 @@ worker起動:
 疎通（例）:
 
 - python で `app.tasks.dummy.add.delay(2,3)` などを実行して結果を取得する
+
+
+## Celery リトライ方針（export.run）
+- 最大リトライ回数: 3
+- バックオフ: 指数（retry_backoff）+ 上限60秒 + ジッタ
+- リトライ対象: DB接続など一時障害（OperationalError/TimeoutError 等）
+- リトライしない: バリデーション/恒久エラー（入力不正、force_fail等）
+- リトライ上限到達時: job.status を failed にし、job.error に retries_exceeded を残す
