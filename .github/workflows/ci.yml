@@ -49,6 +49,7 @@ jobs:
           pip install pytest httpx
           pip install argon2-cffi
           pip install PyJWT
+          pip install celery redis
 
       - name: Lint
         run: |

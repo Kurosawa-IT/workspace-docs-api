@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 from datetime import UTC, datetime
@@ -35,6 +37,15 @@ def _to_json_doc(d: Document) -> dict:
     }
 
 
+def _to_csv(docs: list[Document]) -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["id", "title", "status", "updated_at"])
+    for d in docs:
+        w.writerow([str(d.id), d.title, d.status, d.updated_at.isoformat()])
+    return buf.getvalue()
+
+
 @celery_app.task(name="export.run")
 def run_export(job_id: str) -> dict:
     job_uuid = UUID(job_id)
@@ -47,6 +58,12 @@ def run_export(job_id: str) -> dict:
         job = db.execute(select(Job).where(Job.id == job_uuid)).scalar_one_or_none()
         if job is None:
             return {"status": "missing"}
+
+        fmt = "json"
+        if isinstance(job.payload, dict):
+            fmt = job.payload.get("format", "json")
+        if fmt not in {"json", "csv"}:
+            fmt = "json"
 
         job.status = "running"
         job.error = None
@@ -64,22 +81,29 @@ def run_export(job_id: str) -> dict:
                 .all()
             )
 
-            payload = {
-                "job_id": str(job.id),
-                "workspace_id": str(job.workspace_id),
-                "generated_at": now.isoformat(),
-                "count": len(docs),
-                "docs": [_to_json_doc(d) for d in docs],
-            }
+            if fmt == "csv":
+                content = _to_csv(docs)
+                final_path = out_dir / f"{job.id}.csv"
+                tmp_path = out_dir / f"{job.id}.csv.tmp"
+                tmp_path.write_text(content, encoding="utf-8")
+            else:
+                payload = {
+                    "job_id": str(job.id),
+                    "workspace_id": str(job.workspace_id),
+                    "generated_at": now.isoformat(),
+                    "count": len(docs),
+                    "docs": [_to_json_doc(d) for d in docs],
+                }
+                final_path = out_dir / f"{job.id}.json"
+                tmp_path = out_dir / f"{job.id}.json.tmp"
+                tmp_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
 
-            final_path = out_dir / f"{job.id}.json"
-            tmp_path = out_dir / f"{job.id}.json.tmp"
-
-            tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp_path, final_path)
 
             job.status = "succeeded"
-            job.result = {"path": str(final_path), "count": len(docs)}
+            job.result = {"path": str(final_path), "count": len(docs), "format": fmt}
             job.updated_at = datetime.now(UTC)
             db.commit()
             return job.result

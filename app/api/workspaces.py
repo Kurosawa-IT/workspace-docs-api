@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.schemas.audit import AuditLogListOut, AuditLogOut
 from app.schemas.document import DocumentCreateIn, DocumentListOut, DocumentOut, DocumentUpdateIn
+from app.schemas.export import ExportStartIn
 from app.schemas.job import JobDetailOut, JobOut
 from app.schemas.membership import MemberAddIn, MemberOut, MemberRoleUpdateIn
 from app.schemas.workspace import WorkspaceCreateIn, WorkspaceOut
@@ -357,27 +358,6 @@ def search_audit_logs(
     )
 
 
-@router.post("/{workspace_id}/exports", response_model=JobOut)
-def start_export(
-    ctx: WorkspaceContext = Depends(require(rbac.A_EXPORT_CREATE)),  # noqa: B008
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),  # noqa: B008
-    db: Session = Depends(get_db),  # noqa: B008
-):
-    job, created = create_export_job(
-        db,
-        workspace_id=ctx.workspace.id,
-        idempotency_key=idempotency_key,
-        payload=None,
-    )
-    if created:
-        run_export.delay(str(job.id))
-
-    return JSONResponse(
-        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        content=JobOut.model_validate(job).model_dump(mode="json"),
-    )
-
-
 @router.get("/{workspace_id}/jobs/{job_id}", response_model=JobDetailOut)
 def get_job(
     job_id: UUID,  # noqa: B008
@@ -395,3 +375,26 @@ def get_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     return job
+
+
+@router.post("/{workspace_id}/exports", response_model=JobOut)
+def start_export(
+    body: ExportStartIn = Body(default_factory=ExportStartIn),  # noqa: B008
+    ctx: WorkspaceContext = Depends(require(rbac.A_EXPORT_CREATE)),  # noqa: B008
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=200),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    job, created = create_export_job(
+        db,
+        workspace_id=ctx.workspace.id,
+        idempotency_key=idempotency_key,
+        payload={"format": body.format},
+    )
+
+    if created:
+        run_export.delay(str(job.id))
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        content=JobOut.model_validate(job).model_dump(mode="json"),
+    )
