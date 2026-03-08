@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.debug import router as debug_router
 from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
 from app.core.errors import install_exception_handlers
@@ -38,6 +39,7 @@ req_logger = logging.getLogger("app.request")
 @app.middleware("http")
 async def request_context_and_log(request: Request, call_next):
     rid = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request.state.request_id = rid
 
     t_rid = request_id_var.set(rid)
     t_path = path_var.set(request.url.path)
@@ -123,6 +125,8 @@ app.add_middleware(RequestIdMiddleware)
 app.include_router(auth_router)
 
 app.include_router(workspaces_router)
+
+app.include_router(debug_router)
 
 
 @app.get("/health")
