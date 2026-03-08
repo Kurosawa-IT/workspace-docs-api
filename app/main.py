@@ -3,6 +3,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.auth import router as auth_router
@@ -18,6 +19,12 @@ from app.core.log_context import (
     workspace_id_var,
 )
 from app.core.logging import init_logging
+from app.core.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    normalize_path,
+    render_metrics,
+)
 from app.core.request_id import request_id_var
 
 app = FastAPI(title=settings.app_name)
@@ -49,6 +56,21 @@ async def request_context_and_log(request: Request, call_next):
         user_id_var.set(getattr(request.state, "user_id", "-"))
         workspace_id_var.set(getattr(request.state, "workspace_id", "-"))
         req_logger.info("request", extra={"event": "http_request"})
+        normalized_path = normalize_path(request.url.path)
+        status_str = str(response.status_code)
+        duration_seconds = time.perf_counter() - start
+
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            path=normalized_path,
+            status=status_str,
+        ).inc()
+
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            path=normalized_path,
+            status=status_str,
+        ).observe(duration_seconds)
         return response
     except Exception:
         status_code_var.set(500)
@@ -56,6 +78,20 @@ async def request_context_and_log(request: Request, call_next):
         user_id_var.set(getattr(request.state, "user_id", "-"))
         workspace_id_var.set(getattr(request.state, "workspace_id", "-"))
         req_logger.exception("request_failed", extra={"event": "http_request"})
+        normalized_path = normalize_path(request.url.path)
+        duration_seconds = time.perf_counter() - start
+
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            path=normalized_path,
+            status="500",
+        ).inc()
+
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            path=normalized_path,
+            status="500",
+        ).observe(duration_seconds)
         raise
     finally:
         request_id_var.reset(t_rid)
@@ -92,3 +128,9 @@ app.include_router(workspaces_router)
 @app.get("/health")
 def health():
     return {"status": "ok", "env": settings.app_env}
+
+
+@app.get("/metrics")
+def metrics():
+    body, content_type = render_metrics()
+    return Response(content=body, media_type=content_type)
