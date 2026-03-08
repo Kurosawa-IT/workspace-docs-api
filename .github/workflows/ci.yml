@@ -50,6 +50,7 @@ jobs:
           pip install argon2-cffi
           pip install PyJWT
           pip install celery redis
+          pip install prometheus-client
 
       - name: Lint
         run: |
