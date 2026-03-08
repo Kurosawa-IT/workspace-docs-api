@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Path, status
+from fastapi import Depends, HTTPException, Path, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import rbac
+from app.core.log_context import user_id_var, workspace_id_var
 from app.core.tokens import decode_access_token
 from app.db.session import get_db
 from app.models.membership import Membership
@@ -17,6 +18,7 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,  # noqa: B008
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> User:
@@ -53,6 +55,9 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    user_id_var.set(str(user.id))
+    request.state.user_id = str(user.id)
+
     return user
 
 
@@ -74,6 +79,8 @@ def get_current_workspace(
     if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
+    workspace_id_var.set(str(workspace_id))
+
     return ws
 
 
@@ -85,6 +92,7 @@ class WorkspaceContext:
 
 
 def get_workspace_context(
+    request: Request,  # noqa: B008
     workspace_id: UUID = Path(...),  # noqa: B008
     user: User = Depends(get_current_user),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
@@ -101,6 +109,9 @@ def get_workspace_context(
     ).scalar_one_or_none()
     if ms is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    workspace_id_var.set(str(workspace_id))
+    request.state.workspace_id = str(workspace_id)
 
     return WorkspaceContext(user=user, workspace=ws, membership=ms)
 
