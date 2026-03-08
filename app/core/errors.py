@@ -21,6 +21,7 @@ def _code(status_code: int) -> str:
         404: "not_found",
         409: "conflict",
         422: "validation_error",
+        500: "internal_error",
     }.get(status_code, "error")
 
 
@@ -33,6 +34,7 @@ def _message(status_code: int, detail: Any | None = None) -> str:
         404: "Not found",
         409: "Conflict",
         422: "Validation error",
+        500: "Internal Server Error",
     }.get(status_code, "Error")
 
 
@@ -40,6 +42,7 @@ def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         detail = getattr(exc, "detail", None)
+        rid = getattr(request.state, "request_id", None) or _rid()
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -48,12 +51,14 @@ def install_exception_handlers(app: FastAPI) -> None:
                     "message": _message(exc.status_code, detail),
                     "details": detail if detail is not None else {},
                 },
-                "request_id": _rid(),
+                "request_id": rid,
             },
+            headers={"X-Request-ID": rid},
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        rid = getattr(request.state, "request_id", None) or _rid()
         return JSONResponse(
             status_code=422,
             content={
@@ -62,6 +67,23 @@ def install_exception_handlers(app: FastAPI) -> None:
                     "message": _message(422),
                     "details": {"errors": exc.errors()},
                 },
-                "request_id": _rid(),
+                "request_id": rid,
             },
+            headers={"X-Request-ID": rid},
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        rid = getattr(request.state, "request_id", None) or _rid()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": "Internal Server Error",
+                    "details": {},
+                },
+                "request_id": rid,
+            },
+            headers={"X-Request-ID": rid},
         )
